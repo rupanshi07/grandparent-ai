@@ -1,12 +1,11 @@
 from twilio.rest import Client
-from twilio.twiml.voice_response import VoiceResponse
-from fastapi import Request
+from twilio.twiml.voice_response import VoiceResponse, Gather
 from dotenv import load_dotenv
+from database import get_elder, log_call_attempt
 import os
 
 load_dotenv()
 
-# Twilio credentials
 ACCOUNT_SID = os.getenv("TWILIO_ACCOUNT_SID")
 AUTH_TOKEN = os.getenv("TWILIO_AUTH_TOKEN")
 TWILIO_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
@@ -14,11 +13,10 @@ BASE_URL = os.getenv("BASE_URL")
 
 def initiate_call(elder_phone: str, elder_name: str):
     """
-    Makes an outbound call to the elder's phone number.
-    When they pick up, Twilio fetches instructions from /call/answer
+    Makes an outbound call to the elder.
+    When they pick up Twilio fetches /call/answer
     """
     client = Client(ACCOUNT_SID, AUTH_TOKEN)
-
     call = client.calls.create(
         to=elder_phone,
         from_=TWILIO_NUMBER,
@@ -26,34 +24,90 @@ def initiate_call(elder_phone: str, elder_name: str):
         status_callback=f"{BASE_URL}/call/status",
         status_callback_method="POST"
     )
-
-    print(f"Call initiated to {elder_name} - Call SID: {call.sid}")
+    print(f"Call initiated to {elder_name} - SID: {call.sid}")
     return call.sid
 
-def generate_greeting(elder_name: str) -> str:
+def generate_greeting(elder_name: str, elder_id: int) -> str:
     """
-    Generates TwiML response — instructions Twilio follows during the call.
-    This is what the elder hears when they pick up.
+    First thing elder hears when they pick up.
+    Uses Gather to listen for their response.
     """
     response = VoiceResponse()
 
-    # Greet the elder warmly
+    # Greet warmly
     response.say(
-        f"Namaskar {elder_name} Ji! Main aapka AI saathi hoon. "
+        f"Namaskar {elder_name} Ji! "
+        f"Main aapka AI saathi bol raha hoon. "
         f"Aap kaisa feel kar rahe hain aaj?",
-        voice="Polly.Aditi",  # Indian Hindi voice
-        language="hi-IN"
-    )
-
-    # Pause and listen for 10 seconds
-    response.pause(length=2)
-
-    response.say(
-        "I hope you are doing well today. "
-        "Your family asked me to check on you. "
-        "Please take care and have a wonderful day!",
         voice="Polly.Aditi",
         language="hi-IN"
     )
 
+    # Listen for elder's response
+    gather = Gather(
+        input="speech",
+        action=f"{BASE_URL}/call/respond/{elder_id}",
+        method="POST",
+        timeout=5,
+        speech_timeout="auto",
+        language="hi-IN"
+    )
+    response.append(gather)
+
+    # If elder doesn't speak — try again
+    response.redirect(f"{BASE_URL}/call/answer")
+
+    return str(response)
+
+def generate_response(elder_name: str, elder_id: int,
+                      ai_reply: str) -> str:
+    """
+    Speaks the AI reply and listens for elder's next response.
+    This creates the back-and-forth conversation loop.
+    """
+    response = VoiceResponse()
+
+    # Speak the AI reply
+    response.say(
+        ai_reply,
+        voice="Polly.Aditi",
+        language="hi-IN"
+    )
+
+    # Listen for elder's response
+    gather = Gather(
+        input="speech",
+        action=f"{BASE_URL}/call/respond/{elder_id}",
+        method="POST",
+        timeout=5,
+        speech_timeout="auto",
+        language="hi-IN"
+    )
+    response.append(gather)
+
+    # If elder doesn't speak — end call warmly
+    response.say(
+        "Apna khayal rakhiye Dadi Ji. "
+        "Aapka parivaar aapko bahut pyaar karta hai. Namaste!",
+        voice="Polly.Aditi",
+        language="hi-IN"
+    )
+    response.hangup()
+
+    return str(response)
+
+def generate_goodbye(elder_name: str) -> str:
+    """
+    Warm goodbye message to end the call.
+    """
+    response = VoiceResponse()
+    response.say(
+        f"Bahut accha laga aapse baat karke {elder_name} Ji. "
+        f"Apna khayal rakhiye. "
+        f"Aapka poora parivaar aapko bahut pyaar karta hai. "
+        f"Namaste!",
+        voice="Polly.Aditi",
+        language="hi-IN"
+    )
+    response.hangup()
     return str(response)
