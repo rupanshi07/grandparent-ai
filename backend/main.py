@@ -182,12 +182,49 @@ async def call_respond(elder_id: int, request: Request):
 
 @app.post("/call/status")
 async def call_status(request: Request):
-    """Twilio sends call status updates here."""
+    """
+    Twilio sends call status updates here.
+    When call completes — save memory automatically!
+    """
+    from memory import update_memory, build_transcript
+
     form_data = await request.form()
     status = form_data.get("CallStatus")
     sid = form_data.get("CallSid")
+
     print(f"Call {sid} status: {status}")
     update_attempt_status(sid, status)
+
+    # When call is completed — save memory
+    if status == "completed":
+        print("Call completed — saving memory...")
+
+        # Find which elder this call belongs to
+        # For now we use elder_id 1
+        # In Step 5 we'll make this dynamic
+        elder_id = 1
+
+        # Get conversation history for this elder
+        if elder_id in active_conversations:
+            history = active_conversations[elder_id]
+
+            if len(history) > 0:
+                transcript = build_transcript(history)
+                print(f"Saving transcript:\n{transcript}")
+
+                # Update memory in background
+                import threading
+                def save_memory():
+                    update_memory(elder_id, transcript)
+                    print(f"✓ Memory saved for elder {elder_id}")
+
+                thread = threading.Thread(target=save_memory)
+                thread.start()
+
+            # Clear conversation from memory
+            active_conversations.pop(elder_id, None)
+            print("Conversation cleared from memory")
+
     return {"status": "received"}
 
 @app.post("/test/call")
