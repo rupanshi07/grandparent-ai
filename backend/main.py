@@ -7,11 +7,19 @@ from call_handler import (initiate_call, generate_greeting,
                           generate_response, generate_goodbye)
 from conversation import get_ai_response
 from database import (create_tables, add_elder, get_elder,
-                      get_all_elders, update_attempt_status)
+                      get_all_elders, update_attempt_status,
+                      SessionLocal)
 import os
+import threading
+import atexit
 
 load_dotenv()
 create_tables()
+
+# Start scheduler
+from scheduler import start_scheduler, stop_scheduler
+start_scheduler()
+atexit.register(stop_scheduler)
 
 app = FastAPI(title="Grandparent AI Companion")
 
@@ -110,7 +118,6 @@ async def call_answer(request: Request):
     Twilio calls this when elder picks up.
     We greet them and start listening.
     """
-    # Default to elder_id 1 for now
     elder_id = 1
     elder = get_elder(elder_id)
     elder_name = elder.name if elder else "Dadi Ji"
@@ -128,6 +135,8 @@ async def call_respond(elder_id: int, request: Request):
     We get AI response and speak it back.
     This is the CONVERSATION LOOP!
     """
+    from memory import update_memory, build_transcript
+
     form_data = await request.form()
     elder_speech = form_data.get("SpeechResult", "")
     confidence = form_data.get("Confidence", "0")
@@ -184,9 +193,14 @@ async def call_respond(elder_id: int, request: Request):
 async def call_status(request: Request):
     """
     Twilio sends call status updates here.
-    When call completes — save memory automatically!
+    Handles 3 scenarios:
+    1. completed — save memory
+    2. no-answer — trigger retry logic
+    3. busy/failed — treat as no-answer
     """
     from memory import update_memory, build_transcript
+    from scheduler import (handle_no_answer, handle_call_answered,
+                           active_call_sessions)
 
     form_data = await request.form()
     status = form_data.get("CallStatus")
@@ -195,35 +209,61 @@ async def call_status(request: Request):
     print(f"Call {sid} status: {status}")
     update_attempt_status(sid, status)
 
-    # When call is completed — save memory
+    # Find which elder and attempt this belongs to
+    db = SessionLocal()
+    try:
+        from models import CallAttempt
+        attempt = db.query(CallAttempt).filter(
+            CallAttempt.twilio_call_sid == sid
+        ).first()
+
+        if not attempt:
+            print(f"No attempt found for SID {sid}")
+            # Handle completed test calls
+            if status == "completed":
+                elder_id = 1
+                if elder_id in active_conversations:
+                    history = active_conversations[elder_id]
+                    if len(history) > 0:
+                        transcript = build_transcript(history)
+                        threading.Thread(
+                            target=update_memory,
+                            args=(elder_id, transcript)
+                        ).start()
+                    active_conversations.pop(elder_id, None)
+            return {"status": "received"}
+
+        elder_id = attempt.elder_id
+        call_id = attempt.call_id
+        attempt_number = attempt.attempt_number
+
+    finally:
+        db.close()
+
+    # ─── HANDLE COMPLETED CALL ────────────────────────────
     if status == "completed":
-        print("Call completed — saving memory...")
+        print(f"Call completed for elder {elder_id}")
+        handle_call_answered(elder_id)
 
-        # Find which elder this call belongs to
-        # For now we use elder_id 1
-        # In Step 5 we'll make this dynamic
-        elder_id = 1
-
-        # Get conversation history for this elder
+        # Save memory
         if elder_id in active_conversations:
             history = active_conversations[elder_id]
-
             if len(history) > 0:
                 transcript = build_transcript(history)
-                print(f"Saving transcript:\n{transcript}")
-
-                # Update memory in background
-                import threading
-                def save_memory():
-                    update_memory(elder_id, transcript)
-                    print(f"✓ Memory saved for elder {elder_id}")
-
-                thread = threading.Thread(target=save_memory)
-                thread.start()
-
-            # Clear conversation from memory
+                print(f"Saving memory for elder {elder_id}...")
+                threading.Thread(
+                    target=update_memory,
+                    args=(elder_id, transcript)
+                ).start()
             active_conversations.pop(elder_id, None)
-            print("Conversation cleared from memory")
+
+        # Clear active session
+        active_call_sessions.pop(elder_id, None)
+
+    # ─── HANDLE NO ANSWER ─────────────────────────────────
+    elif status in ["no-answer", "busy", "failed"]:
+        print(f"No answer on attempt {attempt_number} for elder {elder_id}")
+        handle_no_answer(elder_id, call_id, attempt_number)
 
     return {"status": "received"}
 
@@ -235,3 +275,16 @@ async def test_call():
         return {"error": "TEST_PHONE_NUMBER not set in .env"}
     call_sid = initiate_call(phone, "Dadi Ji")
     return {"message": "Call initiated!", "call_sid": call_sid}
+
+@app.post("/test/retry")
+async def test_retry():
+    """
+    Tests the retry logic without waiting.
+    Simulates elder not picking up 3 times.
+    """
+    from scheduler import initiate_call_session
+    threading.Thread(
+        target=initiate_call_session,
+        args=[1]
+    ).start()
+    return {"message": "Retry test started! Watch server logs."}
