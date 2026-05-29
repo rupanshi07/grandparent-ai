@@ -1,7 +1,6 @@
 from twilio.rest import Client
 from twilio.twiml.voice_response import VoiceResponse, Gather
 from dotenv import load_dotenv
-from database import get_elder, log_call_attempt
 import os
 
 load_dotenv()
@@ -31,6 +30,7 @@ def generate_greeting(elder_name: str, elder_id: int) -> str:
     """
     First thing elder hears when they pick up.
     Uses Gather to listen for their response.
+    Longer timeout so elder has time to speak fully.
     """
     response = VoiceResponse()
 
@@ -44,17 +44,19 @@ def generate_greeting(elder_name: str, elder_id: int) -> str:
     )
 
     # Listen for elder's response
+    # timeout=8 gives elder 8 seconds to start speaking
+    # speech_timeout=3 waits 3 seconds of silence before cutting off
     gather = Gather(
         input="speech",
         action=f"{BASE_URL}/call/respond/{elder_id}",
         method="POST",
-        timeout=5,
-        speech_timeout="auto",
+        timeout=8,
+        speech_timeout="3",
         language="hi-IN"
     )
     response.append(gather)
 
-    # If elder doesn't speak — try again
+    # If elder doesn't speak at all — try again
     response.redirect(f"{BASE_URL}/call/answer")
 
     return str(response)
@@ -75,12 +77,13 @@ def generate_response(elder_name: str, elder_id: int,
     )
 
     # Listen for elder's response
+    # Same generous timeout as greeting
     gather = Gather(
         input="speech",
         action=f"{BASE_URL}/call/respond/{elder_id}",
         method="POST",
-        timeout=5,
-        speech_timeout="auto",
+        timeout=8,
+        speech_timeout="3",
         language="hi-IN"
     )
     response.append(gather)

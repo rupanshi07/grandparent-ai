@@ -116,14 +116,15 @@ def get_elder_by_id(elder_id: int):
 async def call_answer(request: Request):
     """
     Twilio calls this when elder picks up.
-    We greet them and start listening.
+    Only initialise conversation if fresh call.
     """
     elder_id = 1
     elder = get_elder(elder_id)
     elder_name = elder.name if elder else "Dadi Ji"
 
-    # Clear any old conversation for this elder
-    active_conversations[elder_id] = []
+    # Only clear history if this is a fresh call
+    if elder_id not in active_conversations:
+        active_conversations[elder_id] = []
 
     twiml = generate_greeting(elder_name, elder_id)
     return Response(content=twiml, media_type="text/xml")
@@ -132,16 +133,42 @@ async def call_answer(request: Request):
 async def call_respond(elder_id: int, request: Request):
     """
     Twilio sends us what the elder said.
-    We get AI response and speak it back.
+    We check for distress, get AI response and speak it back.
     This is the CONVERSATION LOOP!
     """
-    from memory import update_memory, build_transcript
+    from distress import detect_distress
+    from alerts import send_emergency_alert
+    from memory import build_transcript
 
     form_data = await request.form()
     elder_speech = form_data.get("SpeechResult", "")
     confidence = form_data.get("Confidence", "0")
 
     print(f"Elder said: '{elder_speech}' (confidence: {confidence})")
+
+    # If speech is empty or too short — ask to repeat
+    if not elder_speech or len(elder_speech.strip()) < 2:
+        elder = get_elder(elder_id)
+        elder_name = elder.name if elder else "Dadi Ji"
+        response = VoiceResponse()
+        from twilio.twiml.voice_response import VoiceResponse, Gather
+        response = VoiceResponse()
+        response.say(
+            "Mujhe sunai nahi diya. Kya aap dobara bol sakte hain?",
+            voice="Polly.Aditi",
+            language="hi-IN"
+        )
+        gather = Gather(
+            input="speech",
+            action=f"{os.getenv('BASE_URL')}/call/respond/{elder_id}",
+            method="POST",
+            timeout=8,
+            speech_timeout="3",
+            language="hi-IN"
+        )
+        response.append(gather)
+        response.hangup()
+        return Response(content=str(response), media_type="text/xml")
 
     # Get elder from database
     elder = get_elder(elder_id)
@@ -157,7 +184,24 @@ async def call_respond(elder_id: int, request: Request):
 
     history = active_conversations[elder_id]
 
-    # Check if elder wants to end call
+    # ─── DISTRESS DETECTION ───────────────────────────────
+    distress_result = detect_distress(elder_speech, use_llm=False)
+    print(f"Distress check: {distress_result['level']}")
+
+    if distress_result["level"] == "CRITICAL":
+        print(f"🚨 CRITICAL distress! Calling family immediately!")
+        from scheduler import active_call_sessions
+        call_id = active_call_sessions.get(elder_id, 0)
+        threading.Thread(
+            target=send_emergency_alert,
+            args=(elder_id, call_id,
+                  distress_result["reason"], elder_speech)
+        ).start()
+
+    elif distress_result["level"] == "HIGH":
+        print(f"⚠️ HIGH distress detected — monitoring closely")
+
+    # ─── CHECK IF ELDER WANTS TO END CALL ─────────────────
     end_phrases = ["bye", "goodbye", "alvida", "band karo",
                    "rakhna", "theek hai bas", "bas karo"]
     if any(phrase in elder_speech.lower() for phrase in end_phrases):
@@ -165,13 +209,13 @@ async def call_respond(elder_id: int, request: Request):
         active_conversations.pop(elder_id, None)
         return Response(content=twiml, media_type="text/xml")
 
-    # Check conversation length — end after 8 exchanges
+    # End after 8 exchanges
     if len(history) >= 16:
         twiml = generate_goodbye(elder.name)
         active_conversations.pop(elder_id, None)
         return Response(content=twiml, media_type="text/xml")
 
-    # Get AI response
+    # ─── GET AI RESPONSE ──────────────────────────────────
     try:
         ai_reply, updated_history = get_ai_response(
             elder_name=elder.name,
@@ -194,7 +238,7 @@ async def call_status(request: Request):
     """
     Twilio sends call status updates here.
     Handles 3 scenarios:
-    1. completed — save memory
+    1. completed — save memory + full distress scan
     2. no-answer — trigger retry logic
     3. busy/failed — treat as no-answer
     """
@@ -219,7 +263,6 @@ async def call_status(request: Request):
 
         if not attempt:
             print(f"No attempt found for SID {sid}")
-            # Handle completed test calls
             if status == "completed":
                 elder_id = 1
                 if elder_id in active_conversations:
@@ -245,19 +288,43 @@ async def call_status(request: Request):
         print(f"Call completed for elder {elder_id}")
         handle_call_answered(elder_id)
 
-        # Save memory
         if elder_id in active_conversations:
             history = active_conversations[elder_id]
             if len(history) > 0:
                 transcript = build_transcript(history)
-                print(f"Saving memory for elder {elder_id}...")
+                print(f"Saving memory + running distress scan...")
+
+                def save_and_scan(eid, trans, cid):
+                    update_memory(eid, trans)
+                    from distress import detect_distress
+                    full_result = detect_distress(trans, use_llm=True)
+                    print(f"Full distress scan: {full_result['level']}")
+                    db2 = SessionLocal()
+                    try:
+                        from models import Call
+                        call = db2.query(Call).filter(
+                            Call.id == cid
+                        ).first()
+                        if call:
+                            call.distress_level = full_result["level"]
+                            db2.commit()
+                            print(f"✓ Distress level saved: {full_result['level']}")
+                    finally:
+                        db2.close()
+                    if full_result["send_alert"]:
+                        from alerts import send_emergency_alert
+                        send_emergency_alert(
+                            eid, cid,
+                            full_result["reason"], trans
+                        )
+
                 threading.Thread(
-                    target=update_memory,
-                    args=(elder_id, transcript)
+                    target=save_and_scan,
+                    args=(elder_id, transcript, call_id)
                 ).start()
+
             active_conversations.pop(elder_id, None)
 
-        # Clear active session
         active_call_sessions.pop(elder_id, None)
 
     # ─── HANDLE NO ANSWER ─────────────────────────────────
@@ -278,13 +345,29 @@ async def test_call():
 
 @app.post("/test/retry")
 async def test_retry():
-    """
-    Tests the retry logic without waiting.
-    Simulates elder not picking up 3 times.
-    """
+    """Tests the retry logic."""
     from scheduler import initiate_call_session
     threading.Thread(
         target=initiate_call_session,
         args=[1]
     ).start()
     return {"message": "Retry test started! Watch server logs."}
+
+@app.post("/test/distress")
+async def test_distress():
+    """Tests distress detection."""
+    from distress import detect_distress
+    test_phrases = [
+        "Main theek hoon aaj",
+        "Bahut dard ho raha hai",
+        "Seene mein dard ho raha hai bachao"
+    ]
+    results = []
+    for phrase in test_phrases:
+        result = detect_distress(phrase)
+        results.append({
+            "phrase": phrase,
+            "level": result["level"],
+            "reason": result["reason"]
+        })
+    return {"distress_tests": results}
