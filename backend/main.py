@@ -371,3 +371,41 @@ async def test_distress():
             "reason": result["reason"]
         })
     return {"distress_tests": results}
+@app.get("/elders/{elder_id}/alerts")
+def get_elder_alerts(elder_id: int):
+    """Gets all alerts for an elder — used by dashboard."""
+    from alerts import get_alerts_for_elder
+    elder = get_elder(elder_id)
+    if not elder:
+        raise HTTPException(status_code=404, detail="Elder not found")
+    alerts = get_alerts_for_elder(elder_id)
+    return {
+        "elder_name": elder.name,
+        "total_alerts": len(alerts),
+        "alerts": alerts
+    }
+
+@app.post("/alerts/call-status")
+async def alert_call_status(request: Request):
+    """
+    Twilio calls this when emergency family call
+    status changes. Tracks if family picked up.
+    """
+    form_data = await request.form()
+    status = form_data.get("CallStatus")
+    sid = form_data.get("CallSid")
+    print(f"Emergency alert call {sid} status: {status}")
+    return {"status": "received"}
+
+@app.post("/test/alert")
+async def test_alert():
+    """
+    Tests the missed call alert system.
+    Sends WhatsApp/SMS to family contacts of elder 1.
+    """
+    from alerts import send_missed_call_alert
+    threading.Thread(
+        target=send_missed_call_alert,
+        args=(1, 0)
+    ).start()
+    return {"message": "Alert test triggered! Check family WhatsApp/SMS."}
