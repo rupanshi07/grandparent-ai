@@ -189,7 +189,7 @@ async def call_respond(elder_id: int, request: Request):
     print(f"Distress check: {distress_result['level']}")
 
     if distress_result["level"] == "CRITICAL":
-        print(f"🚨 CRITICAL distress! Calling family immediately!")
+        print(f" CRITICAL distress! Calling family immediately!")
         from scheduler import active_call_sessions
         call_id = active_call_sessions.get(elder_id, 0)
         threading.Thread(
@@ -199,7 +199,7 @@ async def call_respond(elder_id: int, request: Request):
         ).start()
 
     elif distress_result["level"] == "HIGH":
-        print(f"⚠️ HIGH distress detected — monitoring closely")
+        print(f" HIGH distress detected — monitoring closely")
 
     # ─── CHECK IF ELDER WANTS TO END CALL ─────────────────
     end_phrases = ["bye", "goodbye", "alvida", "band karo",
@@ -409,3 +409,20 @@ async def test_alert():
         args=(1, 0)
     ).start()
     return {"message": "Alert test triggered! Check family WhatsApp/SMS."}
+
+@app.patch("/elders/{elder_id}/schedule")
+def update_schedule(elder_id: int, data: dict):
+    """Updates elder's call schedule."""
+    from scheduler import schedule_elder_daily_call
+    db = SessionLocal()
+    try:
+        from models import Elder
+        elder = db.query(Elder).filter(Elder.id == elder_id).first()
+        if not elder:
+            raise HTTPException(status_code=404, detail="Elder not found")
+        elder.call_time = data.get("call_time", elder.call_time)
+        db.commit()
+        schedule_elder_daily_call(elder_id, elder.call_time)
+        return {"message": f"Schedule updated to {elder.call_time}"}
+    finally:
+        db.close()
