@@ -1,1 +1,13 @@
+fastapi
+uvicorn
+twilio
+python-dotenv
+sqlalchemy
+apscheduler
+groq
+elevenlabs
+gtts
+pytest
 python-multipart
+pytz
+google-genai
