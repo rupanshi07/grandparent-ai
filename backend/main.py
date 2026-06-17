@@ -1,6 +1,9 @@
-from fastapi import FastAPI, Request, HTTPException
+from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
+from twilio.twiml.voice_response import VoiceResponse, Gather
+from auth import (hash_password, verify_password, create_access_token,
+                  get_current_user_id)
 from pydantic import BaseModel
 from dotenv import load_dotenv
 from call_handler import (initiate_call, generate_greeting,
@@ -34,6 +37,15 @@ app.add_middleware(
 # Key: elder_id, Value: list of messages
 active_conversations = {}
 
+class SignupRequest(BaseModel):
+    email: str
+    password: str
+    full_name: str = ""
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
 class ElderCreate(BaseModel):
     name: str
     phone_number: str
@@ -58,11 +70,75 @@ def check_keys():
         "elevenlabs": "✓ loaded" if os.getenv("ELEVENLABS_API_KEY") else "✗ missing",
     }
 
+# ─── AUTH ENDPOINTS ────────────────────────────────────────────
+@app.post("/auth/signup")
+def signup(data: SignupRequest):
+    """Creates a new family account."""
+    from models import User
+    db = SessionLocal()
+    try:
+        existing = db.query(User).filter(User.email == data.email).first()
+        if existing:
+            raise HTTPException(status_code=400, detail="Email already registered")
+
+        new_user = User(
+            email=data.email,
+            hashed_password=hash_password(data.password),
+            full_name=data.full_name
+        )
+        db.add(new_user)
+        db.commit()
+        db.refresh(new_user)
+
+        token = create_access_token(new_user.id, new_user.email)
+        return {
+            "message": "Account created successfully!",
+            "token": token,
+            "user": {"id": new_user.id, "email": new_user.email, "full_name": new_user.full_name}
+        }
+    finally:
+        db.close()
+
+@app.post("/auth/login")
+def login(data: LoginRequest):
+    """Logs in an existing user with email + password."""
+    from models import User
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.email == data.email).first()
+        if not user or not user.hashed_password:
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+        if not verify_password(data.password, user.hashed_password):
+            raise HTTPException(status_code=401, detail="Invalid email or password")
+
+        token = create_access_token(user.id, user.email)
+        return {
+            "message": "Login successful!",
+            "token": token,
+            "user": {"id": user.id, "email": user.email, "full_name": user.full_name}
+        }
+    finally:
+        db.close()
+
+@app.get("/auth/me")
+def get_me(user_id: int = Depends(get_current_user_id)):
+    """Returns the currently logged-in user's info. Used to verify the token works."""
+    from models import User
+    db = SessionLocal()
+    try:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="User not found")
+        return {"id": user.id, "email": user.email, "full_name": user.full_name}
+    finally:
+        db.close()
+
 # ─── ELDER ENDPOINTS ──────────────────────────────────────────
 @app.post("/elders")
-def create_elder(elder: ElderCreate):
+def create_elder(elder: ElderCreate, user_id: int = Depends(get_current_user_id)):
     try:
         new_elder = add_elder(
+            user_id=user_id,
             name=elder.name,
             phone=elder.phone_number,
             language=elder.language,
@@ -77,8 +153,8 @@ def create_elder(elder: ElderCreate):
         raise HTTPException(status_code=400, detail=str(e))
 
 @app.get("/elders")
-def list_elders():
-    elders = get_all_elders()
+def list_elders(user_id: int = Depends(get_current_user_id)):
+    elders = get_all_elders(user_id=user_id)
     return {
         "total": len(elders),
         "elders": [
@@ -96,9 +172,9 @@ def list_elders():
     }
 
 @app.get("/elders/{elder_id}")
-def get_elder_by_id(elder_id: int):
+def get_elder_by_id(elder_id: int, user_id: int = Depends(get_current_user_id)):
     elder = get_elder(elder_id)
-    if not elder:
+    if not elder or elder.user_id != user_id:
         raise HTTPException(status_code=404, detail="Elder not found")
     return {
         "id": elder.id,
@@ -122,7 +198,6 @@ async def call_answer(request: Request):
     elder = get_elder(elder_id)
     elder_name = elder.name if elder else "Dadi Ji"
 
-    # Only clear history if this is a fresh call
     if elder_id not in active_conversations:
         active_conversations[elder_id] = []
 
@@ -146,12 +221,7 @@ async def call_respond(elder_id: int, request: Request):
 
     print(f"Elder said: '{elder_speech}' (confidence: {confidence})")
 
-    # If speech is empty or too short — ask to repeat
     if not elder_speech or len(elder_speech.strip()) < 2:
-        elder = get_elder(elder_id)
-        elder_name = elder.name if elder else "Dadi Ji"
-        response = VoiceResponse()
-        from twilio.twiml.voice_response import VoiceResponse, Gather
         response = VoiceResponse()
         response.say(
             "Mujhe sunai nahi diya. Kya aap dobara bol sakte hain?",
@@ -170,7 +240,6 @@ async def call_respond(elder_id: int, request: Request):
         response.hangup()
         return Response(content=str(response), media_type="text/xml")
 
-    # Get elder from database
     elder = get_elder(elder_id)
     if not elder:
         return Response(
@@ -178,7 +247,6 @@ async def call_respond(elder_id: int, request: Request):
             media_type="text/xml"
         )
 
-    # Get or create conversation history
     if elder_id not in active_conversations:
         active_conversations[elder_id] = []
 
@@ -189,7 +257,7 @@ async def call_respond(elder_id: int, request: Request):
     print(f"Distress check: {distress_result['level']}")
 
     if distress_result["level"] == "CRITICAL":
-        print(f" CRITICAL distress! Calling family immediately!")
+        print("CRITICAL distress! Calling family immediately!")
         from scheduler import active_call_sessions
         call_id = active_call_sessions.get(elder_id, 0)
         threading.Thread(
@@ -199,7 +267,7 @@ async def call_respond(elder_id: int, request: Request):
         ).start()
 
     elif distress_result["level"] == "HIGH":
-        print(f" HIGH distress detected — monitoring closely")
+        print("HIGH distress detected — monitoring closely")
 
     # ─── CHECK IF ELDER WANTS TO END CALL ─────────────────
     end_phrases = ["bye", "goodbye", "alvida", "band karo",
@@ -209,7 +277,6 @@ async def call_respond(elder_id: int, request: Request):
         active_conversations.pop(elder_id, None)
         return Response(content=twiml, media_type="text/xml")
 
-    # End after 8 exchanges
     if len(history) >= 16:
         twiml = generate_goodbye(elder.name)
         active_conversations.pop(elder_id, None)
@@ -253,7 +320,6 @@ async def call_status(request: Request):
     print(f"Call {sid} status: {status}")
     update_attempt_status(sid, status)
 
-    # Find which elder and attempt this belongs to
     db = SessionLocal()
     try:
         from models import CallAttempt
@@ -283,7 +349,6 @@ async def call_status(request: Request):
     finally:
         db.close()
 
-    # ─── HANDLE COMPLETED CALL ────────────────────────────
     if status == "completed":
         print(f"Call completed for elder {elder_id}")
         handle_call_answered(elder_id)
@@ -292,7 +357,7 @@ async def call_status(request: Request):
             history = active_conversations[elder_id]
             if len(history) > 0:
                 transcript = build_transcript(history)
-                print(f"Saving memory + running distress scan...")
+                print("Saving memory + running distress scan...")
 
                 def save_and_scan(eid, trans, cid):
                     update_memory(eid, trans)
@@ -327,7 +392,6 @@ async def call_status(request: Request):
 
         active_call_sessions.pop(elder_id, None)
 
-    # ─── HANDLE NO ANSWER ─────────────────────────────────
     elif status in ["no-answer", "busy", "failed"]:
         print(f"No answer on attempt {attempt_number} for elder {elder_id}")
         handle_no_answer(elder_id, call_id, attempt_number)
@@ -371,12 +435,13 @@ async def test_distress():
             "reason": result["reason"]
         })
     return {"distress_tests": results}
+
 @app.get("/elders/{elder_id}/alerts")
-def get_elder_alerts(elder_id: int):
+def get_elder_alerts(elder_id: int, user_id: int = Depends(get_current_user_id)):
     """Gets all alerts for an elder — used by dashboard."""
     from alerts import get_alerts_for_elder
     elder = get_elder(elder_id)
-    if not elder:
+    if not elder or elder.user_id != user_id:
         raise HTTPException(status_code=404, detail="Elder not found")
     alerts = get_alerts_for_elder(elder_id)
     return {
@@ -411,14 +476,14 @@ async def test_alert():
     return {"message": "Alert test triggered! Check family WhatsApp/SMS."}
 
 @app.patch("/elders/{elder_id}/schedule")
-def update_schedule(elder_id: int, data: dict):
+def update_schedule(elder_id: int, data: dict, user_id: int = Depends(get_current_user_id)):
     """Updates elder's call schedule."""
     from scheduler import schedule_elder_daily_call
     db = SessionLocal()
     try:
         from models import Elder
         elder = db.query(Elder).filter(Elder.id == elder_id).first()
-        if not elder:
+        if not elder or elder.user_id != user_id:
             raise HTTPException(status_code=404, detail="Elder not found")
         elder.call_time = data.get("call_time", elder.call_time)
         db.commit()
@@ -428,16 +493,28 @@ def update_schedule(elder_id: int, data: dict):
         db.close()
 
 @app.delete("/elders/{elder_id}")
-def delete_elder(elder_id: int):
+def delete_elder(elder_id: int, user_id: int = Depends(get_current_user_id)):
     """Deletes an elder from the system."""
     db = SessionLocal()
     try:
         from models import Elder
         elder = db.query(Elder).filter(Elder.id == elder_id).first()
-        if not elder:
+        if not elder or elder.user_id != user_id:
             raise HTTPException(status_code=404, detail="Elder not found")
         db.delete(elder)
         db.commit()
         return {"message": f"Elder {elder_id} deleted"}
     finally:
         db.close()
+
+@app.post("/admin/migrate")
+def run_migration():
+    """
+    ONE-TIME USE: drops and recreates all tables to apply schema changes.
+    Remove this endpoint after running it once.
+    """
+    from models import Base
+    from database import engine
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+    return {"message": "Migration complete — all tables recreated with new schema"}

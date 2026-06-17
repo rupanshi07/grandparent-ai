@@ -39,13 +39,14 @@ def get_db():
     finally:
         db.close()
 
-def add_elder(name: str, phone: str, language: str,
+def add_elder(user_id: int, name: str, phone: str, language: str,
               call_time: str, family_contacts: list):
-    """Adds a new elder to the database."""
+    """Adds a new elder to the database, linked to the owning user."""
     from models import Elder
     db = SessionLocal()
     try:
         elder = Elder(
+            user_id=user_id,
             name=name,
             phone_number=phone,
             language=language,
@@ -56,7 +57,7 @@ def add_elder(name: str, phone: str, language: str,
         db.add(elder)
         db.commit()
         db.refresh(elder)
-        print(f"✓ Elder '{name}' added with ID: {elder.id}")
+        print(f"✓ Elder '{name}' added with ID: {elder.id} for user {user_id}")
         return elder
     finally:
         db.close()
@@ -70,12 +71,19 @@ def get_elder(elder_id: int):
     finally:
         db.close()
 
-def get_all_elders():
-    """Gets all elders from the database."""
+def get_all_elders(user_id: int = None):
+    """
+    Gets elders from the database.
+    If user_id is given, only returns elders belonging to that user.
+    If user_id is None, returns all elders (used internally by the scheduler).
+    """
     from models import Elder
     db = SessionLocal()
     try:
-        return db.query(Elder).all()
+        query = db.query(Elder)
+        if user_id is not None:
+            query = query.filter(Elder.user_id == user_id)
+        return query.all()
     finally:
         db.close()
 

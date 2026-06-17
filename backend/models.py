@@ -4,14 +4,29 @@ from datetime import datetime
 
 Base = declarative_base()
 
+class User(Base):
+    """
+    Stores one row per registered family account.
+    Each user can register multiple elders under their account.
+    """
+    __tablename__ = "users"
+
+    id               = Column(Integer, primary_key=True, index=True)
+    email            = Column(String, unique=True, nullable=False, index=True)
+    hashed_password  = Column(String, nullable=True)  # null if Google-only signup
+    full_name        = Column(String, default="")
+    google_id        = Column(String, unique=True, nullable=True)
+    created_at       = Column(DateTime, default=datetime.utcnow)
+
 class Elder(Base):
     """
     Stores information about each elderly person.
-    One row per elder registered in the system.
+    One row per elder, linked to the family account (user_id) that added them.
     """
     __tablename__ = "elders"
 
     id              = Column(Integer, primary_key=True, index=True)
+    user_id         = Column(Integer, nullable=False, index=True)
     name            = Column(String, nullable=False)
     phone_number    = Column(String, unique=True, nullable=False)
     language        = Column(String, default="hindi")
@@ -40,22 +55,22 @@ class CallAttempt(Base):
     """
     Stores each individual ring attempt.
     One Call can have up to 3 CallAttempts.
-    This is what powers your retry logic!
+    This is what powers the retry logic.
     """
     __tablename__ = "call_attempts"
 
-    id             = Column(Integer, primary_key=True, index=True)
-    call_id        = Column(Integer, nullable=False)
-    elder_id       = Column(Integer, nullable=False)
-    attempt_number = Column(Integer, nullable=False)
-    twilio_call_sid= Column(String, nullable=True)
-    status         = Column(String, default="initiated")
-    tried_at       = Column(DateTime, default=datetime.utcnow)
+    id              = Column(Integer, primary_key=True, index=True)
+    call_id         = Column(Integer, nullable=False)
+    elder_id        = Column(Integer, nullable=False)
+    attempt_number  = Column(Integer, nullable=False)
+    twilio_call_sid = Column(String, nullable=True)
+    status          = Column(String, default="initiated")
+    tried_at        = Column(DateTime, default=datetime.utcnow)
 
 class Alert(Base):
     """
     Stores every alert sent to family members.
-    Both WhatsApp alerts and emergency phone calls.
+    Both WhatsApp/SMS alerts and emergency phone calls.
     """
     __tablename__ = "alerts"
 
