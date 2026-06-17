@@ -426,3 +426,18 @@ def update_schedule(elder_id: int, data: dict):
         return {"message": f"Schedule updated to {elder.call_time}"}
     finally:
         db.close()
+
+@app.delete("/elders/{elder_id}")
+def delete_elder(elder_id: int):
+    """Deletes an elder from the system."""
+    db = SessionLocal()
+    try:
+        from models import Elder
+        elder = db.query(Elder).filter(Elder.id == elder_id).first()
+        if not elder:
+            raise HTTPException(status_code=404, detail="Elder not found")
+        db.delete(elder)
+        db.commit()
+        return {"message": f"Elder {elder_id} deleted"}
+    finally:
+        db.close()
