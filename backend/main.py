@@ -19,6 +19,28 @@ import atexit
 load_dotenv()
 create_tables()
 
+# One-time safe migration: adds missing column/table if they don't exist yet.
+# Safe to leave in permanently — does nothing once already applied.
+try:
+    from sqlalchemy import text
+    from database import engine
+    with engine.connect() as conn:
+        conn.execute(text("ALTER TABLE elders ADD COLUMN IF NOT EXISTS user_id INTEGER DEFAULT 0;"))
+        conn.execute(text("""
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                email VARCHAR UNIQUE NOT NULL,
+                hashed_password VARCHAR,
+                full_name VARCHAR DEFAULT '',
+                google_id VARCHAR UNIQUE,
+                created_at TIMESTAMP DEFAULT NOW()
+            );
+        """))
+        conn.commit()
+    print("✓ Schema migration check complete")
+except Exception as e:
+    print(f"Migration check skipped (likely SQLite locally, that's fine): {e}")
+
 # Start scheduler
 from scheduler import start_scheduler, stop_scheduler
 start_scheduler()
@@ -436,27 +458,6 @@ async def test_distress():
         })
     return {"distress_tests": results}
 
-@app.post("/admin/run-once-migration-delete-after")
-def run_once_migration():
-    """
-    TEMPORARY — adds user_id column and users table.
-    DELETE THIS ENDPOINT IMMEDIATELY AFTER RUNNING IT ONCE.
-    """
-    from database import engine
-    with engine.connect() as conn:
-        conn.execute("ALTER TABLE elders ADD COLUMN IF NOT EXISTS user_id INTEGER DEFAULT 0;")
-        conn.execute("""
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                email VARCHAR UNIQUE NOT NULL,
-                hashed_password VARCHAR,
-                full_name VARCHAR DEFAULT '',
-                google_id VARCHAR UNIQUE,
-                created_at TIMESTAMP DEFAULT NOW()
-            );
-        """)
-        conn.commit()
-    return {"message": "Migration ran successfully on the live database"}
 
 @app.get("/elders/{elder_id}/alerts")
 def get_elder_alerts(elder_id: int, user_id: int = Depends(get_current_user_id)):
