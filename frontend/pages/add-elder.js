@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import axios from "axios";
 import { useRouter } from "next/router";
 import Link from "next/link";
@@ -18,9 +18,21 @@ export default function AddElder() {
   ]);
   const [loading, setLoading] = useState(false);
 
+  useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      router.push("/login");
+    }
+  }, []);
+
   const handleSubmit = async () => {
     if (!form.name || !form.phone_number) {
       alert("Please fill in name and phone number!");
+      return;
+    }
+    const token = localStorage.getItem("token");
+    if (!token) {
+      router.push("/login");
       return;
     }
     setLoading(true);
@@ -28,16 +40,22 @@ export default function AddElder() {
       await axios.post(`${API}/elders`, {
         ...form,
         family_contacts: contacts.filter(c => c.name && c.phone)
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
       });
       alert(`${form.name} added successfully!`);
       router.push("/");
     } catch (e) {
+      if (e.response?.status === 401) {
+        localStorage.removeItem("token");
+        router.push("/login");
+        return;
+      }
       alert("Failed to add elder: " + e.response?.data?.detail);
     } finally {
       setLoading(false);
     }
   };
-
   const addContact = () => {
     setContacts([...contacts, {
       name: "", phone: "", priority: contacts.length + 1

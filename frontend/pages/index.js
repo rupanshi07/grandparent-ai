@@ -1,33 +1,61 @@
 import { useState, useEffect } from "react";
 import axios from "axios";
 import Link from "next/link";
+import { useRouter } from "next/router";
 import { Phone, Users, Activity, ChevronRight,
          Clock, Globe, AlertCircle, PhoneCall } from "lucide-react";
 
 const API = process.env.NEXT_PUBLIC_API_URL || "http://127.0.0.1:8000";
 
 export default function Home() {
+  const router = useRouter();
   const [elders, setElders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [calling, setCalling] = useState(null);
+  const [user, setUser] = useState(null);
 
   useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      router.push("/login");
+      return;
+    }
+    const storedUser = localStorage.getItem("user");
+    if (storedUser) setUser(JSON.parse(storedUser));
+
     fetchElders();
     const interval = setInterval(fetchElders, 30000);
     return () => clearInterval(interval);
   }, []);
 
   const fetchElders = async () => {
+    const token = localStorage.getItem("token");
+    if (!token) {
+      router.push("/login");
+      return;
+    }
     try {
-      const res = await axios.get(`${API}/elders`);
+      const res = await axios.get(`${API}/elders`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       setElders(res.data.elders);
     } catch (e) {
+      if (e.response?.status === 401) {
+        localStorage.removeItem("token");
+        localStorage.removeItem("user");
+        router.push("/login");
+      }
       console.error(e);
     } finally {
       setLoading(false);
     }
   };
 
+  const handleLogout = () => {
+    localStorage.removeItem("token");
+    localStorage.removeItem("user");
+    router.push("/login");
+  };
   const triggerCall = async (elderId, elderName) => {
     setCalling(elderId);
     try {
@@ -73,8 +101,20 @@ export default function Home() {
         </nav>
 
         <div style={styles.sidebarFooter}>
-          <div style={styles.statusDot}></div>
-          <span style={styles.statusText}>System Online</span>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: "8px", marginBottom: "10px" }}>
+              <div style={styles.statusDot}></div>
+              <span style={styles.statusText}>System Online</span>
+            </div>
+            {user && (
+              <p style={{ fontSize: "11px", color: "#888", margin: "0 0 8px" }}>
+                {user.email}
+              </p>
+            )}
+            <button onClick={handleLogout} style={styles.logoutBtn}>
+              Log Out
+            </button>
+          </div>
         </div>
       </div>
 
@@ -312,6 +352,16 @@ const styles = {
     borderRadius: "50%",
   },
   statusText: { fontSize: "12px", color: "#666" },
+  logoutBtn: {
+    width: "100%",
+    background: "transparent",
+    border: "1px solid #333",
+    color: "#ccc",
+    padding: "7px",
+    borderRadius: "6px",
+    fontSize: "12px",
+    cursor: "pointer",
+  },
   main: {
     marginLeft: "230px",
     flex: 1,
