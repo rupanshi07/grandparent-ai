@@ -36,6 +36,27 @@ try:
                 created_at TIMESTAMP DEFAULT NOW()
             );
         """))
+        # Fix: drop the global phone uniqueness constraint and replace
+        # with a per-user uniqueness constraint so two families can
+        # register the same grandparent number under their own accounts.
+        try:
+            conn.execute(text("ALTER TABLE elders DROP CONSTRAINT IF EXISTS elders_phone_number_key;"))
+            conn.execute(text("""
+                DO $$
+                BEGIN
+                    IF NOT EXISTS (
+                        SELECT 1 FROM pg_constraint
+                        WHERE conname = 'elders_user_phone_unique'
+                    ) THEN
+                        ALTER TABLE elders
+                        ADD CONSTRAINT elders_user_phone_unique
+                        UNIQUE (user_id, phone_number);
+                    END IF;
+                END$$;
+            """))
+            print("✓ Phone uniqueness constraint updated to per-user")
+        except Exception as ce:
+            print(f"Constraint update skipped: {ce}")
         conn.commit()
     print("✓ Schema migration check complete")
 except Exception as e:
