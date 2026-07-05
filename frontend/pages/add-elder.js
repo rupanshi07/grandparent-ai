@@ -32,7 +32,7 @@ export default function AddElder() {
       return;
     }
     if (!form.phone_number.startsWith("+")) {
-      setError("Phone number must include country code e.g. +918699303323");
+      setError("Phone number must include country code e.g. +91XXXXXXXXXX");
       return;
     }
     const token = localStorage.getItem("token");
@@ -117,6 +117,17 @@ export default function AddElder() {
 
           {error && <div style={styles.errorBox}>{error}</div>}
 
+          {/* Twilio Trial Notice */}
+          <div style={styles.noticeBox}>
+            <span style={styles.noticeIcon}>ℹ️</span>
+            <p style={styles.noticeText}>
+              <strong>Trial Mode:</strong> Due to Twilio trial account restrictions,
+              calls can currently only be made to pre-verified phone numbers.
+              This limitation is removed on a paid Twilio account.
+              Contact your admin to verify a number before adding.
+            </p>
+          </div>
+
           {/* Basic Info */}
           <div style={styles.card}>
             <h3 style={styles.cardTitle}>Basic Information</h3>
@@ -126,7 +137,7 @@ export default function AddElder() {
                 <label style={styles.label}>Full Name *</label>
                 <input
                   type="text"
-                  placeholder="e.g. Dadi Ji"
+                  placeholder="Name"
                   value={form.name}
                   onChange={e => setForm({...form, name: e.target.value})}
                   style={styles.input}
@@ -136,7 +147,7 @@ export default function AddElder() {
                 <label style={styles.label}>Phone Number *</label>
                 <input
                   type="text"
-                  placeholder="+918699303323"
+                  placeholder="+91XXXXXXXXXX"
                   value={form.phone_number}
                   onChange={e => setForm({...form, phone_number: e.target.value})}
                   style={styles.input}
@@ -197,7 +208,7 @@ export default function AddElder() {
                   />
                   <input
                     type="text"
-                    placeholder="+918699303323"
+                    placeholder="+91XXXXXXXXXX"
                     value={contact.phone}
                     onChange={e => updateContact(i, "phone", e.target.value)}
                     style={{...styles.input, flex: 1.5}}
@@ -258,6 +269,29 @@ const styles = {
     borderBottom: "1px solid #222",
     marginBottom: "16px",
   },
+noticeBox: {
+    background: "#fffbeb",
+    border: "1px solid #f59e0b",
+    borderLeft: "4px solid #f59e0b",
+    borderRadius: "10px",
+    padding: "12px 16px",
+    marginBottom: "16px",
+    display: "flex",
+    alignItems: "flex-start",
+    gap: "10px",
+  },
+  noticeIcon: {
+    fontSize: "16px",
+    flexShrink: 0,
+    marginTop: "1px",
+  },
+  noticeText: {
+    margin: 0,
+    fontSize: "13px",
+    color: "#92400e",
+    lineHeight: "1.6",
+  },
+
   logoIcon: {
     width: "38px",
     height: "38px",
