@@ -270,9 +270,9 @@ const styles = {
     marginBottom: "16px",
   },
 noticeBox: {
-  background: "#f3f4f6", // Light grey
+  background: "#f3f4f6",       
   border: "1px solid #d1d5db",
-  borderLeft: "4px solid #9ca3af", // Grey left border
+  borderLeft: "4px solid #9ca3af",  
   borderRadius: "10px",
   padding: "12px 16px",
   marginBottom: "16px",
@@ -280,20 +280,20 @@ noticeBox: {
   alignItems: "flex-start",
   gap: "10px",
 },
-
 noticeIcon: {
   fontSize: "16px",
   flexShrink: 0,
   marginTop: "1px",
-  color: "#000", // Optional: make icon black too
+  color: "#111827", 
 },
 
 noticeText: {
   margin: 0,
   fontSize: "13px",
-  color: "#000", // Black text
+  color: "#111827",  
   lineHeight: "1.6",
 },
+
   logoIcon: {
     width: "38px",
     height: "38px",
