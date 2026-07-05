@@ -119,7 +119,7 @@ export default function AddElder() {
 
           {/* Twilio Trial Notice */}
           <div style={styles.noticeBox}>
-            <span style={styles.noticeIcon}>ℹ️</span>
+            <span style={styles.noticeIcon}></span>
             <p style={styles.noticeText}>
               <strong>Trial Mode:</strong> Due to Twilio trial account restrictions,
               calls can currently only be made to pre-verified phone numbers.
