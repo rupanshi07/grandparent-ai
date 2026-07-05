@@ -270,28 +270,30 @@ const styles = {
     marginBottom: "16px",
   },
 noticeBox: {
-    background: "#fffbeb",
-    border: "1px solid #f59e0b",
-    borderLeft: "4px solid #f59e0b",
-    borderRadius: "10px",
-    padding: "12px 16px",
-    marginBottom: "16px",
-    display: "flex",
-    alignItems: "flex-start",
-    gap: "10px",
-  },
-  noticeIcon: {
-    fontSize: "16px",
-    flexShrink: 0,
-    marginTop: "1px",
-  },
-  noticeText: {
-    margin: 0,
-    fontSize: "13px",
-    color: "#92400e",
-    lineHeight: "1.6",
-  },
+  background: "#f3f4f6", // Light grey
+  border: "1px solid #d1d5db",
+  borderLeft: "4px solid #9ca3af", // Grey left border
+  borderRadius: "10px",
+  padding: "12px 16px",
+  marginBottom: "16px",
+  display: "flex",
+  alignItems: "flex-start",
+  gap: "10px",
+},
 
+noticeIcon: {
+  fontSize: "16px",
+  flexShrink: 0,
+  marginTop: "1px",
+  color: "#000", // Optional: make icon black too
+},
+
+noticeText: {
+  margin: 0,
+  fontSize: "13px",
+  color: "#000", // Black text
+  lineHeight: "1.6",
+},
   logoIcon: {
     width: "38px",
     height: "38px",
