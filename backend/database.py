@@ -18,7 +18,13 @@ if DATABASE_URL.startswith("sqlite"):
         connect_args={"check_same_thread": False}
     )
 else:
-    engine = create_engine(DATABASE_URL)
+    engine = create_engine(
+        DATABASE_URL,
+        pool_pre_ping=True,
+        pool_recycle=300,
+        pool_size=5,
+        max_overflow=2
+    )
 
 # Create session factory
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
@@ -29,10 +35,7 @@ def create_tables():
     print("✓ Database tables created successfully!")
 
 def get_db():
-    """
-    Returns a database session.
-    Always close the session after use.
-    """
+    """Returns a database session. Always close after use."""
     db = SessionLocal()
     try:
         yield db
