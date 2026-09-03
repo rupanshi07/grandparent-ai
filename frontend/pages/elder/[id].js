@@ -15,13 +15,19 @@ export default function ElderDetail() {
   const [loading, setLoading] = useState(true);
   const [newTime, setNewTime] = useState("09:00");
 
-  useEffect(() => {
+    useEffect(() => {
+    const token = localStorage.getItem("token");
+    if (!token) { router.push("/login"); return; }
     if (id) { fetchElder(); fetchAlerts(); }
   }, [id]);
 
-  const fetchElder = async () => {
+    const fetchElder = async () => {
+    const token = localStorage.getItem("token");
+    if (!token) { router.push("/login"); return; }
     try {
-      const res = await axios.get(`${API}/elders/${id}`);
+      const res = await axios.get(`${API}/elders/${id}`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       setElder(res.data);
       setNewTime(res.data.call_time);
     } catch (e) {
@@ -31,16 +37,26 @@ export default function ElderDetail() {
     }
   };
 
-  const fetchAlerts = async () => {
+    const fetchAlerts = async () => {
+    const token = localStorage.getItem("token");
+    if (!token) return;
     try {
-      const res = await axios.get(`${API}/elders/${id}/alerts`);
+      const res = await axios.get(`${API}/elders/${id}/alerts`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       setAlerts(res.data.alerts);
     } catch (e) { console.error(e); }
   };
 
-  const updateCallTime = async () => {
-    try {
-      await axios.patch(`${API}/elders/${id}/schedule`, { call_time: newTime });
+    const updateCallTime = async (newTime) => {
+    const token = localStorage.getItem("token");
+    if (!token) return;
+    try:
+      await axios.patch(`${API}/elders/${id}/schedule`, {
+        call_time: newTime
+      }, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
       alert(`Call time updated to ${newTime}!`);
       fetchElder();
     } catch (e) { alert("Failed to update schedule"); }

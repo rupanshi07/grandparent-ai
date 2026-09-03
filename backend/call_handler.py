@@ -46,12 +46,12 @@ def generate_greeting(elder_name: str, elder_id: int) -> str:
     # Listen for elder's response
     # timeout=8 gives elder 8 seconds to start speaking
     # speech_timeout=3 waits 3 seconds of silence before cutting off
-    gather = Gather(
+        gather = Gather(
         input="speech",
         action=f"{BASE_URL}/call/respond/{elder_id}",
         method="POST",
-        timeout=8,
-        speech_timeout="3",
+        timeout=10,
+        speech_timeout="auto",
         language="hi-IN"
     )
     response.append(gather)
@@ -78,12 +78,12 @@ def generate_response(elder_name: str, elder_id: int,
 
     # Listen for elder's response
     # Same generous timeout as greeting
-    gather = Gather(
+        gather = Gather(
         input="speech",
         action=f"{BASE_URL}/call/respond/{elder_id}",
         method="POST",
-        timeout=8,
-        speech_timeout="3",
+        timeout=10,
+        speech_timeout="auto",
         language="hi-IN"
     )
     response.append(gather)
