@@ -30,11 +30,9 @@ def generate_greeting(elder_name: str, elder_id: int) -> str:
     """
     First thing elder hears when they pick up.
     Uses Gather to listen for their response.
-    Longer timeout so elder has time to speak fully.
     """
     response = VoiceResponse()
 
-    # Greet warmly
     response.say(
         f"Namaskar {elder_name} Ji! "
         f"Main aapka AI saathi bol raha hoon. "
@@ -43,10 +41,7 @@ def generate_greeting(elder_name: str, elder_id: int) -> str:
         language="hi-IN"
     )
 
-    # Listen for elder's response
-    # timeout=8 gives elder 8 seconds to start speaking
-    # speech_timeout=3 waits 3 seconds of silence before cutting off
-        gather = Gather(
+    gather = Gather(
         input="speech",
         action=f"{BASE_URL}/call/respond/{elder_id}",
         method="POST",
@@ -56,9 +51,7 @@ def generate_greeting(elder_name: str, elder_id: int) -> str:
     )
     response.append(gather)
 
-    # If elder doesn't speak at all — try again
     response.redirect(f"{BASE_URL}/call/answer")
-
     return str(response)
 
 def generate_response(elder_name: str, elder_id: int,
@@ -69,16 +62,13 @@ def generate_response(elder_name: str, elder_id: int,
     """
     response = VoiceResponse()
 
-    # Speak the AI reply
     response.say(
         ai_reply,
         voice="Polly.Aditi",
         language="hi-IN"
     )
 
-    # Listen for elder's response
-    # Same generous timeout as greeting
-        gather = Gather(
+    gather = Gather(
         input="speech",
         action=f"{BASE_URL}/call/respond/{elder_id}",
         method="POST",
@@ -88,7 +78,6 @@ def generate_response(elder_name: str, elder_id: int,
     )
     response.append(gather)
 
-    # If elder doesn't speak — end call warmly
     response.say(
         "Apna khayal rakhiye Dadi Ji. "
         "Aapka parivaar aapko bahut pyaar karta hai. Namaste!",
@@ -96,7 +85,6 @@ def generate_response(elder_name: str, elder_id: int,
         language="hi-IN"
     )
     response.hangup()
-
     return str(response)
 
 def generate_goodbye(elder_name: str) -> str:
