@@ -33,11 +33,12 @@ def generate_greeting(elder_name: str, elder_id: int) -> str:
     )
     response.pause(length=1)
     gather = Gather(
-        input="dtmf",
+        input="speech",
         action=f"{BASE_URL}/call/respond/{elder_id}",
         method="POST",
         timeout=15,
-        num_digits=1
+        speech_timeout="auto",
+        language="hi-IN"
     )
     response.append(gather)
     response.redirect(f"{BASE_URL}/call/answer")
@@ -52,11 +53,12 @@ def generate_response(elder_name: str, elder_id: int, ai_reply: str) -> str:
     )
     response.pause(length=1)
     gather = Gather(
-        input="dtmf",
+        input="speech",
         action=f"{BASE_URL}/call/respond/{elder_id}",
         method="POST",
         timeout=15,
-        num_digits=1
+        speech_timeout="auto",
+        language="hi-IN"
     )
     response.append(gather)
     response.say(
