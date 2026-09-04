@@ -65,12 +65,13 @@ def generate_response(elder_name: str, elder_id: int,
         language="hi-IN"
     )
 
-    gather = Gather(
-        input="speech",
+        gather = Gather(
+        input="speech dtmf",
         action=f"{BASE_URL}/call/respond/{elder_id}",
         method="POST",
-        timeout=10,
+        timeout=15,
         speech_timeout="auto",
+        numDigits=1,
         language="hi-IN"
     )
     response.append(gather)
