@@ -42,14 +42,12 @@ def generate_greeting(elder_name: str, elder_id: int) -> str:
     )
     response.pause(length=1)
 
-    gather = Gather(
-        input="speech dtmf",
+        gather = Gather(
+        input="dtmf",
         action=f"{BASE_URL}/call/respond/{elder_id}",
         method="POST",
         timeout=15,
-        speech_timeout="auto",
-        num_digits=1,
-        language="hi-IN"
+        num_digits=1
     )
     response.append(gather)
 
