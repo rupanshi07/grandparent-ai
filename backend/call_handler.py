@@ -27,6 +27,10 @@ def initiate_call(elder_phone: str, elder_name: str):
     return call.sid
 
 def generate_greeting(elder_name: str, elder_id: int) -> str:
+    """
+    First thing elder hears when they pick up.
+    Uses Gather to listen for their response (speech or keypad).
+    """
     response = VoiceResponse()
 
     response.say(
@@ -39,11 +43,12 @@ def generate_greeting(elder_name: str, elder_id: int) -> str:
     response.pause(length=1)
 
     gather = Gather(
-        input="speech",
+        input="speech dtmf",
         action=f"{BASE_URL}/call/respond/{elder_id}",
         method="POST",
         timeout=15,
         speech_timeout="auto",
+        num_digits=1,
         language="hi-IN"
     )
     response.append(gather)
@@ -64,14 +69,15 @@ def generate_response(elder_name: str, elder_id: int,
         voice="Polly.Aditi",
         language="hi-IN"
     )
+    response.pause(length=1)
 
-        gather = Gather(
+    gather = Gather(
         input="speech dtmf",
         action=f"{BASE_URL}/call/respond/{elder_id}",
         method="POST",
         timeout=15,
         speech_timeout="auto",
-        numDigits=1,
+        num_digits=1,
         language="hi-IN"
     )
     response.append(gather)
