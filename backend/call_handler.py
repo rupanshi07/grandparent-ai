@@ -11,10 +11,6 @@ TWILIO_NUMBER = os.getenv("TWILIO_PHONE_NUMBER")
 BASE_URL = os.getenv("BASE_URL")
 
 def initiate_call(elder_phone: str, elder_name: str):
-    """
-    Makes an outbound call to the elder.
-    When they pick up Twilio fetches /call/answer
-    """
     client = Client(ACCOUNT_SID, AUTH_TOKEN)
     call = client.calls.create(
         to=elder_phone,
@@ -27,12 +23,7 @@ def initiate_call(elder_phone: str, elder_name: str):
     return call.sid
 
 def generate_greeting(elder_name: str, elder_id: int) -> str:
-    """
-    First thing elder hears when they pick up.
-    Uses Gather to listen for their response (speech or keypad).
-    """
     response = VoiceResponse()
-
     response.say(
         f"Namaskar {elder_name} Ji! "
         f"Main aapka AI saathi bol raha hoon. "
@@ -41,8 +32,7 @@ def generate_greeting(elder_name: str, elder_id: int) -> str:
         language="hi-IN"
     )
     response.pause(length=1)
-
-        gather = Gather(
+    gather = Gather(
         input="dtmf",
         action=f"{BASE_URL}/call/respond/{elder_id}",
         method="POST",
@@ -50,36 +40,25 @@ def generate_greeting(elder_name: str, elder_id: int) -> str:
         num_digits=1
     )
     response.append(gather)
-
     response.redirect(f"{BASE_URL}/call/answer")
     return str(response)
 
-def generate_response(elder_name: str, elder_id: int,
-                      ai_reply: str) -> str:
-    """
-    Speaks the AI reply and listens for elder's next response.
-    This creates the back-and-forth conversation loop.
-    """
+def generate_response(elder_name: str, elder_id: int, ai_reply: str) -> str:
     response = VoiceResponse()
-
     response.say(
         ai_reply,
         voice="Polly.Aditi",
         language="hi-IN"
     )
     response.pause(length=1)
-
     gather = Gather(
-        input="speech dtmf",
+        input="dtmf",
         action=f"{BASE_URL}/call/respond/{elder_id}",
         method="POST",
         timeout=15,
-        speech_timeout="auto",
-        num_digits=1,
-        language="hi-IN"
+        num_digits=1
     )
     response.append(gather)
-
     response.say(
         "Apna khayal rakhiye Dadi Ji. "
         "Aapka parivaar aapko bahut pyaar karta hai. Namaste!",
@@ -90,9 +69,6 @@ def generate_response(elder_name: str, elder_id: int,
     return str(response)
 
 def generate_goodbye(elder_name: str) -> str:
-    """
-    Warm goodbye message to end the call.
-    """
     response = VoiceResponse()
     response.say(
         f"Bahut accha laga aapse baat karke {elder_name} Ji. "
