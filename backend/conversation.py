@@ -66,7 +66,7 @@ def get_ai_response(elder_name: str, language: str,
 
     # Get response from Groq
     response = client.chat.completions.create(
-                model="llama-3.1-8b-instant",
+                        model="openai/gpt-oss-20b",
         messages=[
             {
                 "role": "system",
